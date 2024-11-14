@@ -34,7 +34,7 @@ within a system by removing air from specific areas.
     python src/trainModel.py --repetition=10 --gpu-memory=4096
 
 - A folder with trained models is generated under "models" folder 
-- Trained models are managed by the time of their creations
+- The name of the trained models are managed by the time of their creations.
 
 ---
 ## Inference Model
