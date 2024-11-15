@@ -15,7 +15,7 @@ import argparse
       
 
 parser = argparse.ArgumentParser(description='Parameters for model inference')
-parser.add_argument('--model-path', type=str, required=False, default='model_proposed_mlp_2024_08_19_19_39_09', help='모델 경로')
+parser.add_argument('--model-name', type=str, required=False, default=None, help='모델 이름')
 parser.add_argument('--gpu-memory', type=int, required=False, default=4096, help='GPU 사용량')
 
 if __name__ == "__main__":
@@ -23,6 +23,12 @@ if __name__ == "__main__":
     setGpuUsage(args.gpu_memory)
     makeDir('./figures')
     dt_string = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+    if args.model_name is None:
+        model_list = os.listdir('./models')
+        model_list.sort()
+        model_name = model_list[-1]
+    else:
+        model_name = args.model_name
 
     print("Load preprocessed data")
     with open('./data/processedData.pickle', 'rb') as handle:
@@ -37,13 +43,13 @@ if __name__ == "__main__":
     yTest = yDataTest[:,0]
     y_hard_true = (yTest>=0.5).astype('int')       
     predictor = Predictor_MLP(xDataTrain.shape[1])
-    model_dir = os.path.join(os.getcwd(),'models',args.model_path)
+    model_dir = os.path.join(os.getcwd(),'models',model_name)
     model_path = [dir for dir in os.listdir(model_dir)]
 
     test_prob_list = list()
     test_val_list = list()
     results_df = list()
-    print(f"Inference models in '{args.model_path}'")
+    print(f"Inference models in '{model_name}'")
     for trained_model in tqdm(model_path):
         predictor.load_weights(os.path.join(model_dir,trained_model,'checkpoint')).expect_partial()
         testPreds, testAttn, testProbs = predictor.predict(xDataTest, verbose=0)
@@ -58,7 +64,7 @@ if __name__ == "__main__":
         xEnt = log_loss(y_hard_true, testProbs[:,1])
         results_df.append({'model': trained_model, 'ACC': accuracy, 'F1': f1score, 'xEnt': xEnt})
     
-    print(f"Ensemble models in '{args.model_path}'")
+    print(f"Ensemble models in '{model_name}'")
     y_prob_pred = np.mean(test_prob_list,axis=0)
     y_hard_pred = (y_prob_pred[:,1]>=0.5).astype('int')
     recall = (y_hard_true*y_hard_pred).sum()/(y_hard_true).sum()
@@ -90,7 +96,7 @@ if __name__ == "__main__":
     ax.legend(ncol=2)
     ax.grid()
     fig.tight_layout()
-    fig.savefig(f'./figures/IGV_BOV_projected_{args.model_path}.pdf')
+    fig.savefig(f'./figures/IGV_BOV_projected_{model_name}.pdf')
     plt.clf()
     
     plt.rcParams["font.family"] = "Times New Roman"
@@ -101,5 +107,5 @@ if __name__ == "__main__":
     ax.legend(ncol=2)
     ax.grid()
     fig.tight_layout()
-    fig.savefig(f'./figures/IGV_BOV_original{args.model_path}.pdf')
+    fig.savefig(f'./figures/IGV_BOV_original{model_name}.pdf')
     plt.clf()

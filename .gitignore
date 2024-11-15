@@ -1,3 +1,8 @@
 # ignore the followings
 
 tmp/
+rawData/
+cleanedData/
+mergedData/
+labeledData/
+processedData/
