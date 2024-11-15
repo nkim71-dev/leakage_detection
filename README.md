@@ -23,6 +23,7 @@ Run to preprocess raw data after creating a foldder called 'rawData' and putting
         - Noisy features are eliminated.
         - All values are normalized.
         - Time series are chunked into batches.
+        - Leakage labels are assigend with GMM.
 
 - Feature
     - The features are described in "data/columns.json"
