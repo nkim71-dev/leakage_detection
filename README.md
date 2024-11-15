@@ -32,7 +32,6 @@ Run to preprocess raw data after creating a foldder called 'rawData' and putting
     - IGV and BOV are normalized with standard normalization.
     - All input features are normalized with minmax normalizaiton.
 
-![model](./images/dataset_description.png)
 
 ---
 ## Train Model
