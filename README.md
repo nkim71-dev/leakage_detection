@@ -11,10 +11,14 @@ specific point due to certain factors. It regulates overpressure
 within a system by removing air from specific areas.
 
 ---
-## Dataset
+## Processing Data
+Run to preprocess raw data after creating a foldder called 'rawData' and putting rawdata in the folder
+
+    sh src/preprocessData.sh
+
 - Description
-    - A real-world compressor dataset is collected from a manufacturing plant from April 2023 to August 2023.
-    - The dataset is preprocessed and provided in "data" folder.
+    - A real-world compressor dataset is collected from a manufacturing plant in Rep. of Korea from April 2023 to August 2023.
+    - The preprocessed dataset is provided in "data" folder.
         - Null and invalid values are removed.
         - Noisy features are eliminated.
         - All values are normalized.
@@ -31,6 +35,8 @@ within a system by removing air from specific areas.
 
 ---
 ## Train Model
+Run to train leakage classifier models 
+
     python src/trainModel.py --repetition=10 --gpu-memory=4096
 
 - A folder with trained models is generated under "models" folder 
@@ -38,6 +44,8 @@ within a system by removing air from specific areas.
 
 ---
 ## Inference Model
+Run to inference the trained leakage classifier models
+
 
     python src/inferenceModel.py --gpu-memory=4096
 
