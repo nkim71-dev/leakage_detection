@@ -1,8 +1,9 @@
 import tensorflow as tf
 
-class Encoder(tf.keras.Model):
+# Input feature 임베딩과 BOV & IGV projection을 위한 Projector
+class Projector(tf.keras.Model):
     def __init__(self, embeddingDim=1):
-        super(Encoder, self).__init__()
+        super(Projector, self).__init__()
         self.flat = tf.keras.layers.Flatten()
         self.dense1 = tf.keras.layers.Dense(64)
         self.lrelu1 = tf.keras.layers.LeakyReLU(alpha=0.3)
@@ -36,9 +37,10 @@ class Encoder(tf.keras.Model):
         igv = self.dropOIGV(igv, training=training)
         return self.outputsBOV(bov), self.outputsIGV(igv)
    
-class Projector(tf.keras.Model):
+# Projected BOV & IGV로부터 air leakage probability를 예측하는 Predictor
+class Predictor(tf.keras.Model):
     def __init__(self, outputDim):
-        super(Projector, self).__init__()
+        super(Predictor, self).__init__()
         self.concat = tf.keras.layers.Concatenate(axis=-1)
         self.dense1 = tf.keras.layers.Dense(8)
         self.lrelu1 = tf.keras.layers.LeakyReLU(alpha=0.3)
@@ -58,42 +60,56 @@ class Projector(tf.keras.Model):
         z = self.dropO2(z, training=training)
         return self.outputs(z)
        
-    
+# Projector와 Predictor로 이루어진 Air Leakage Prediction 모델
 class Predictor_MLP(tf.keras.models.Model):
     def __init__(self, featureLen):
         super(Predictor_MLP, self).__init__()
-        num_class=2
-        self.encoder = Encoder()
-        self.projector = Projector(num_class)
+        # 모델 선언
+        num_class=2 # class 0: non-leakage, class 1: leakage
         self.ohe = tf.keras.layers.CategoryEncoding(num_tokens=num_class, output_mode="one_hot")
-
+        self.projector = Projector()
+        self.predictor = Predictor(num_class)
+        
+        # 모델의 Loss tracker 선언
         self.lossTracker = tf.keras.metrics.Mean(name="loss")
         self.BovIgvLossTracker = tf.keras.metrics.Mean(name="BOV_IGV_loss")
-        self.projectorLossTracker = tf.keras.metrics.Mean(name="LEAKAGE_loss")
+        self.predictorLossTracker = tf.keras.metrics.Mean(name="LEAKAGE_loss")
+
+        # cross entropy loss 함수
+        self.scce = tf.keras.losses.CategoricalCrossentropy()
 
     @property
     def metrics(self):
         return[self.lossTracker,
-               self.projectorLossTracker]
+               self.predictorLossTracker]
     
     def train_step(self, data):
+        # 입력 데이터 정리
         x,y = data
         batch_size = tf.shape(y)[0]
         leakage = tf.cast(y[:,0:1]>=0.5, tf.float32)
         leakage_prob = tf.cast(y[:,0:1], tf.float32)
-        leakage_sle = tf.concat([1-y[:,0:1], y[:,0:1]],axis=-1)
         leakage_ohe = self.ohe(leakage)
-        bov_igv = y[:,1:]
         bov = y[:,1:2]
         igv = y[:,2:]
-        scce = tf.keras.losses.CategoricalCrossentropy()
+
+        # 학습
         with tf.GradientTape() as tape:
-            z1, z2 = self.encoder(x, training=True)
-            probs = self.projector([z1, z2], training=True)
-            probsLoss = tf.math.reduce_mean(scce(leakage_ohe, probs))
-            valsLoss = tf.math.reduce_mean((z1-bov)**2)/2 + tf.math.reduce_mean((z2-igv)**2)/2 +\
-                       tf.math.reduce_mean(abs((z1-z2)-(bov-igv)))/2
-            X = tf.concat([z1,z2], axis=-1)
+
+            # Feedforward
+            projectedBov, projectedIgv = self.projector(x, training=True)
+            probs = self.predictor([projectedBov, projectedIgv], training=True)
+            
+            # 실제 및 추론된 Leakage probability에 대한 Cross entropy loss
+            probsLoss = tf.math.reduce_mean(self.scce(leakage_ohe, probs))
+            
+            # Projected된 BOV와 IGV에 대한 예측 loss (regularization)
+            valsLoss = tf.math.reduce_mean((projectedBov-bov)**2)/2 + tf.math.reduce_mean((projectedIgv-igv)**2)/2 +\
+                       tf.math.reduce_mean(abs((projectedBov-projectedIgv)-(bov-igv)))/2
+            
+            # 하나의 배치 내 동일한 class끼리 BOV와 IGV가 latent space 내 근접하게 projection이 되고
+            # 다른 class끼리 BOV와 IGV가 latent space 내 멀리 위치하도록 하는 Contrastive learning loss 
+            X = tf.concat([projectedBov,projectedIgv], axis=-1)
             X_norm = X/tf.norm(X,axis=-1,keepdims=True)
             X_mul = tf.matmul(X_norm, X_norm,transpose_a=False, transpose_b=True)
             nonIdentity = (tf.ones([batch_size,batch_size])-tf.eye(batch_size))
@@ -104,40 +120,50 @@ class Predictor_MLP(tf.keras.models.Model):
             dissimilar_mat = (1-leakage_mat/tf.maximum(tf.math.reduce_sum(1-leakage_prob),1)-nonleakage_mat/tf.maximum(tf.math.reduce_sum(leakage_prob)-1,1))*nonIdentity
             dissim = tf.matmul(X_mul*dissimilar_mat,1/tf.maximum(tf.math.reduce_sum(dissimilar_mat, axis=-1, keepdims=True),1))[:,0]
             simLoss = (1+dissim)/2+(1-leakage_sim)/2 +(1-nonleakage_sim)/2
-            totalLoss = probsLoss+valsLoss + simLoss
+            
+            # leakage probability loss, latent space 내 projected BOV와 IGV에 대한 loss의 합으로 총 loss 계산
+            totalLoss = probsLoss + valsLoss + simLoss
         
-        trainableVars = (self.encoder.trainable_variables + 
-                         self.projector.trainable_variables)
+        # Gradient 업데이트
+        trainableVars = (self.projector.trainable_variables + 
+                         self.predictor.trainable_variables)
         gradients = tape.gradient(totalLoss, trainableVars,
                                   unconnected_gradients=tf.UnconnectedGradients.ZERO)
         self.optimizer.apply_gradients(zip(gradients, trainableVars))
 
-        
+        # Loss tracking
         self.lossTracker.update_state(totalLoss)
         self.BovIgvLossTracker.update_state(valsLoss)
-        self.projectorLossTracker.update_state(probsLoss)
+        self.predictorLossTracker.update_state(probsLoss)
 
         return {"loss": self.lossTracker.result(),
                 "BOV_IGV_loss": self.BovIgvLossTracker.result(),
-                "LEAKAGE_loss": self.projectorLossTracker.result(),}
+                "LEAKAGE_loss": self.predictorLossTracker.result(),}
     
     def test_step(self, data):
+        # 입력 데이터 정리
         x,y=data
         batch_size = tf.shape(y)[0]
         leakage = tf.cast(y[:,0:1]>=0.5, tf.float32)
         leakage_prob = tf.cast(y[:,0:1], tf.float32)
-        leakage_sle = tf.concat([1-y[:,0:1], y[:,0:1]],axis=-1)
         leakage_ohe = self.ohe(leakage)
-        bov_igv = y[:,1:]
         bov = y[:,1:2]
         igv = y[:,2:]
-        scce = tf.keras.losses.CategoricalCrossentropy()
-        z1, z2 = self.encoder(x, training=False)
-        probs = self.projector([z1, z2], training=False)
-        probsLoss = tf.math.reduce_mean(scce(leakage_ohe, probs))
-        valsLoss = tf.math.reduce_mean((z1-bov)**2)/2 + tf.math.reduce_mean((z2-igv)**2)/2 +\
-                       tf.math.reduce_mean(abs((z1-z2)-(bov-igv)))/2
-        X = tf.concat([z1,z2], axis=-1)
+
+        # Feedforward
+        projectedBov, projectedIgv = self.projector(x, training=False)
+        probs = self.predictor([projectedBov, projectedIgv], training=False)
+
+        # 실제 및 추론된 Leakage probability에 대한 Cross entropy loss
+        probsLoss = tf.math.reduce_mean(self.scce(leakage_ohe, probs))
+
+        # Projected된 BOV와 IGV에 대한 예측 loss (regularization)
+        valsLoss = tf.math.reduce_mean((projectedBov-bov)**2)/2 + tf.math.reduce_mean((projectedIgv-igv)**2)/2 +\
+                       tf.math.reduce_mean(abs((projectedBov-projectedIgv)-(bov-igv)))/2
+        
+        # 하나의 배치 내 동일한 class끼리 BOV와 IGV가 latent space 내 근접하게 projection이 되고
+        # 다른 class끼리 BOV와 IGV가 latent space 내 멀리 위치하도록 하는 Contrastive learning loss     
+        X = tf.concat([projectedBov,projectedIgv], axis=-1)
         X_norm = X/tf.norm(X,axis=-1,keepdims=True)
         X_mul = tf.matmul(X_norm, X_norm,transpose_a=False, transpose_b=True)
         nonIdentity = (tf.ones([batch_size,batch_size])-tf.eye(batch_size))
@@ -150,15 +176,17 @@ class Predictor_MLP(tf.keras.models.Model):
         simLoss = (1+dissim)/2+(1-leakage_sim)/2 +(1-nonleakage_sim)/2
         totalLoss = probsLoss+valsLoss + simLoss
 
+        # Loss tracker
         self.lossTracker.update_state(totalLoss)
         self.BovIgvLossTracker.update_state(valsLoss)
-        self.projectorLossTracker.update_state(probsLoss)
+        self.predictorLossTracker.update_state(probsLoss)
 
         return {"loss": self.lossTracker.result(),
                 "BOV_IGV_loss": self.BovIgvLossTracker.result(),
-                "LEAKAGE_loss": self.projectorLossTracker.result(),}
+                "LEAKAGE_loss": self.predictorLossTracker.result(),}
     
     def call(self, x, training=None, mask=None):
-        zq1, zq2 = self.encoder(x, training=training)
-        probs = self.projector([zq1, zq2], training=training)
-        return [zq1, zq2], [], probs
+        # Feedforward
+        projectedBov, projectedIgv = self.projector(x, training=training)
+        probs = self.predictor([projectedBov, projectedIgv], training=training)
+        return probs, [projectedBov, projectedIgv]

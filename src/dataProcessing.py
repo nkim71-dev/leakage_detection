@@ -16,7 +16,10 @@ def loadProcessFile(filepath, scalers, xCols, yCols):
 parser = argparse.ArgumentParser(description='aggregate data (month)')
 parser.add_argument('--chamber', type=int, default=1)     
 args = parser.parse_args()
+
 if __name__ == "__main__":
+    # 데이터 전처리 (데이터 정규화 및 배치 생성)
+    
     dt_string = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
     datapath = './labeledData'
     destPath = './data'

@@ -3,12 +3,14 @@ import numpy as np
 from datetime import datetime
 import tensorflow as tf
 
+# 디렉토리 생성
 def makeDir(path):
     if os.path.exists(path):
         return 'Already existing'
     os.mkdir(path)
     return 'Path created'
 
+# GPU 사용 메모리 설정
 def setGpuUsage(memory=2048):
     gpus = tf.config.experimental.list_physical_devices('GPU')
     if gpus:
@@ -22,7 +24,7 @@ def setGpuUsage(memory=2048):
         except RuntimeError as e:
             print(e)
 
-
+# Time-series 데이터 배치 생성
 class timeseriesBatch():
     def __init__(self,df):
         self.df = df.reset_index(drop=True)

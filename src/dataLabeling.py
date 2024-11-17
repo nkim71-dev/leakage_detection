@@ -9,8 +9,6 @@ import warnings
 warnings.filterwarnings(action='ignore')
 
 
-
-
 def find_interseciton(m1,m2,std1,std2, w1, w2):
     import numpy as np
     a = 1/(2*std1**2) - 1/(2*std2**2)
@@ -32,14 +30,17 @@ parser = argparse.ArgumentParser(description='aggregate data (month)')
 parser.add_argument('--chamber', type=int, default=1)     
 args = parser.parse_args()
 if __name__ == "__main__":
+
+    # 입력 및 출력 데이터 디렉토리 설정 및 생성
     datapath = './mergedData'
     destPath = './labeledData'
+    makeDir(destPath)
 
+    # 입력 데이터 로드 및 전처리
     df = pd.read_csv(f'{datapath}/merged_chamber{args.chamber}.csv')
     df['TIME'] = pd.to_datetime(df['TIME'])
     df = df.drop(index=df.query("BOV==100").query("IGV==0").index).copy()
     df = df.drop(index=df.query("BOV==0").query("IGV==100").index).copy()
-
     df_train_list = list()
     df_valid_list = list()
     df_test_list = list()
@@ -54,7 +55,7 @@ if __name__ == "__main__":
     df_valid = pd.concat(df_valid_list,axis=0).reset_index(drop=True)
     df_test = pd.concat(df_test_list,axis=0).reset_index(drop=True)
     
-
+    # GMM 학습 및 결과 시각화
     df_fit = df_train.copy()
     gmm = GaussianMixture(n_components=4, means_init=[[-110], [-30], [30], [110]],
                       random_state=1234)
@@ -75,7 +76,7 @@ if __name__ == "__main__":
         else:
             plt.plot(x,norm.pdf(x, loc=m, scale=s)*w, linewidth=2, c='tab:green', linestyle=':')
         tmp += norm.pdf(x, loc=m, scale=s)*w
-    x_i = [m for m in find_interseciton(*mu[1:3], *sig[1:3], *ws[1:3])][-1] #x[find_peaks(-tmp)[0][-2]]
+    x_i = [m for m in find_interseciton(*mu[1:3], *sig[1:3], *ws[1:3])][-1] 
 
     plt.plot(x,tmp,c='tab:red', linewidth=2, linestyle='--',label='Gaussian Mixture Model')
     plt.plot([x_i,x_i],[0,max(tmp)], linewidth=2, c='tab:orange', label='Decision Boundary')
@@ -86,13 +87,11 @@ if __name__ == "__main__":
 
     makeDir('./figures')
     fig.savefig(f'./figures/leakage_labeling_with_gmm.pdf')
-    # print([m for m in find_interseciton(*mu[1:3], *sig[1:3], *ws[1:3])])
    
+    # 학습된 GMM 기반 데이터 라벨링 및 데이터 저장
     df_train = labelLeakage(df_train, mu, sig)
     df_valid = labelLeakage(df_valid, mu, sig)
     df_test = labelLeakage(df_test, mu, sig)
-
-    makeDir(destPath)
     df_train.to_parquet(f'./labeledData/chamber{args.chamber}_train.parquet')
     df_valid.to_parquet(f'./labeledData/chamber{args.chamber}_valid.parquet')
     df_test.to_parquet(f'./labeledData/chamber{args.chamber}_test.parquet')

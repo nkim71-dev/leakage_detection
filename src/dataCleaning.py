@@ -11,6 +11,8 @@ parser = argparse.ArgumentParser(description='aggregate data (month)')
 parser.add_argument('--month', type=str, help='e.g., 202303')     
 args = parser.parse_args()
 if __name__ == "__main__":
+    # 데이터 전처리 (데이터 컬럼 이름 변경 및 invalid 컬럼 제거) 후 주어진 달 별로 데이터 취합
+    
     data_time = args.month
     datapath = './rawData'
     destPath = './cleanedData'

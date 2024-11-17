@@ -4,6 +4,8 @@ import os
 from utils import makeDir
 
 if __name__ == "__main__":
+    # 주어진 입력 데이터 디렉토리 데이터에서 내 chamber 별로 데이터 취합
+    
     datapath = './cleanedData'
     destPath = './mergedData'
     

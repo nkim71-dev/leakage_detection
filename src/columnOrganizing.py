@@ -4,6 +4,8 @@ import json
 from utils import makeDir
 
 if __name__ == "__main__":
+    # 전처리 후 데이터 컬럼에 대한 정보 정리
+
     datapath = './labeledData'
     destPath = './data'
     makeDir(destPath)
