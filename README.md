@@ -11,6 +11,12 @@ specific point due to certain factors. It regulates overpressure
 within a system by removing air from specific areas.
 
 ---
+## Prepare Env.
+Install packages
+
+    pip install -r requirements.txt
+
+
 ## Processing Data
 Run to preprocess raw data after creating a foldder called 'rawData' and putting rawdata in the folder
 
